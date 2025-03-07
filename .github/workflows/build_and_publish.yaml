@@ -1,0 +1,56 @@
+name: Build and Release Assets
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  build-and-upload:
+    name: Build and Upload Release Assets
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Needed to upload assets to the release
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Setup Deno
+        uses: denoland/setup-deno@v1
+        with:
+          deno-version: v1.x
+
+      - name: Get release
+        id: get_release
+        uses: bruceadams/get-release@v1.2.3
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build all platform binaries
+        run: |
+          # Run the compile:all task which builds for all platforms
+          deno task compile:all
+
+          # Create a directory for renamed release assets
+          mkdir -p release-assets
+
+          # Rename and copy files to include the version (release tag)
+          cp build/darwin/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
+          cp build/darwin/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-macos
+          cp build/linux/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
+          cp build/linux/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-linux
+          cp build/windows/arm64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          cp build/windows/x64/dir-remover.exe release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+
+      - name: Upload Assets
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
+            release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-macos
+            release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
+            release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-linux
+            release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+            release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,11 +1,19 @@
 {
-	"tasks": {
-		"dev": "deno run --watch main.ts"
-	},
-	"imports": {
-		"@std/assert": "jsr:@std/assert@1"
-	},
-	"lint": {
-		"exclude": ["no-explicit-any"]
-	}
+  "tasks": {
+    "dev": "deno run --watch main.ts",
+    "compile:darwin:arm64": "deno compile --output build/darwin/aarch64/dir-remover --target aarch64-apple-darwin -A main.ts",
+    "compile:darwin:x64": "deno compile --output build/darwin/x64/dir-remover --target x86_64-apple-darwin main.ts",
+    "compile:linux:arm64": "deno compile --output build/linux/aarch64/dir-remover --target aarch64-unknown-linux-gnu main.ts",
+    "compile:linux:x64": "deno compile --output build/linux/x64/dir-remover --target x86_64-unknown-linux-gnu main.ts",
+    "compile:windows:arm64": "deno compile --output build/windows/arm64/dir-remover.exe --target x86_64-pc-windows-msvc main.ts",
+    "compile:windows:x64": "deno compile --output build/windows/x64/dir-remover.exe --target x86_64-pc-windows-msvc main.ts",
+    "compile:all": "deno task compile:darwin:arm64 && deno task compile:darwin:x64 && deno task compile:linux:arm64 && deno task compile:linux:x64 && deno task compile:windows:arm64"
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1",
+    "consola": "npm:consola@^3.4.0"
+  },
+  "lint": {
+    "exclude": ["no-explicit-any"]
+  }
 }

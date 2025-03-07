@@ -1,13 +1,21 @@
-const dev_path = Deno.args[0]
+import consola from 'consola'
+
+let dev_path = Deno.args[0]
+
+if (dev_path === '.') {
+  dev_path = Deno.cwd()
+} else if (dev_path === undefined) {
+  dev_path = Deno.cwd()
+}
 
 if (!dev_path) {
-  console.error('Please provide a path')
+  consola.error('No path provided')
   Deno.exit(1)
 }
 
 const continue_response = confirm(`Are you sure you wanna continue in '${dev_path}'?`)
 if (!continue_response) {
-  console.log('Aborting')
+  consola.info('Aborting')
   Deno.exit(0)
 }
 
@@ -30,32 +38,28 @@ async function askToDelete(dirs: AsyncIterable<Deno.DirEntry>): Promise<string[]
 
 async function deleteDirs(directories: string[]) {
   if (directories.length === 0) {
-    console.log('Nothing to delete')
+    consola.info('Nothing to delete')
     return
   }
 
-  console.log(`${directories.join(', ')} will be deleted`)
+  console.info(`${directories.join(', ')} will be deleted`)
 
   const confirmed = confirm('Are you sure you want to delete these directories?')
   if (!confirmed) {
-    console.log('Aborting')
+    consola.info('Aborting')
     return
   }
 
   for (const dir of directories) {
     try {
       await Deno.remove(`${dev_path}/${dir}`, { recursive: true })
-      console.log(`Deleted ${dir}`)
+      consola.success(`Deleted ${dir}`)
     } catch (error) {
-      console.error(`Failed to delete ${dir}: ${error}`)
+      consola.error(`Failed to delete ${dir}: ${error}`)
     }
   }
 }
 
-async function main() {
-  const dirs = getDirs(dev_path)
-  const to_delete = await askToDelete(dirs)
-  await deleteDirs(to_delete)
-}
-
-main()
+const dirs = getDirs(dev_path)
+const to_delete = await askToDelete(dirs)
+await deleteDirs(to_delete)
