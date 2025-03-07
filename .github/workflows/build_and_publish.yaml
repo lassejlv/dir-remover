@@ -15,7 +15,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install Deno
+      - name: Setup Deno
         uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -31,26 +31,54 @@ jobs:
           # Run the compile:all task which builds for all platforms
           deno task compile:all
 
+          # Debug - check what files were actually created
+          echo "Files in build directory:"
+          find build -type f || echo "No build directory found"
+
           # Create a directory for renamed release assets
           mkdir -p release-assets
 
-          # Rename and copy files to include the version (release tag)
-          cp build/darwin/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
-          cp build/darwin/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-macos
-          cp build/linux/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
-          cp build/linux/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-linux
-          cp build/windows/arm64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
-          cp build/windows/x64/dir-remover.exe release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          # Find and copy binaries with flexible path handling
+          # Darwin (macOS) binaries
+          if [ -f "build/darwin/aarch64/dir-remover" ]; then
+            cp build/darwin/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
+          elif [ -f "build/darwin/arm64/dir-remover" ]; then
+            cp build/darwin/arm64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
+          fi
+
+          if [ -f "build/darwin/x64/dir-remover" ]; then
+            cp build/darwin/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-macos
+          fi
+
+          # Linux binaries
+          if [ -f "build/linux/aarch64/dir-remover" ]; then
+            cp build/linux/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
+          elif [ -f "build/linux/arm64/dir-remover" ]; then
+            cp build/linux/arm64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
+          fi
+
+          if [ -f "build/linux/x64/dir-remover" ]; then
+            cp build/linux/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-linux
+          fi
+
+          # Windows binaries
+          if [ -f "build/windows/aarch64/dir-remover.exe" ]; then
+            cp build/windows/aarch64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          elif [ -f "build/windows/arm64/dir-remover.exe" ]; then
+            cp build/windows/arm64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          fi
+
+          if [ -f "build/windows/x64/dir-remover.exe" ]; then
+            cp build/windows/x64/dir-remover.exe release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          fi
+
+          # List what we found to upload
+          echo "Files ready to upload:"
+          ls -la release-assets/
 
       - name: Upload Assets
         uses: softprops/action-gh-release@v1
         with:
-          files: |
-            release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
-            release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-macos
-            release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
-            release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-linux
-            release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
-            release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
