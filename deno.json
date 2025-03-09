@@ -15,5 +15,6 @@
   },
   "lint": {
     "exclude": ["no-explicit-any"]
-  }
+  },
+  "version": "0.1.3"
 }

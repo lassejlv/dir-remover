@@ -1,4 +1,19 @@
 import consola from 'consola'
+import denoJson from "./deno.json" with { type: "json"}
+
+const cmd = Deno.args[0]
+
+if (cmd === '--help' || cmd === '-h') {
+  console.log(`
+  Usage: dir-remover [path]
+  `)
+  Deno.exit(0)
+}
+
+if (cmd === '--version' || cmd === '-v') {
+  console.log(denoJson.version)
+  Deno.exit(0)
+}
 
 let dev_path = Deno.args[0]
 
