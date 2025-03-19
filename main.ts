@@ -6,6 +6,8 @@ const cmd = Deno.args[0]
 if (cmd === '--help' || cmd === '-h') {
   console.log(`
   Usage: dir-remover [path]
+  Options:
+    --all    Skip individual confirmations and ask to delete all files at once
   `)
   Deno.exit(0)
 }
@@ -15,7 +17,8 @@ if (cmd === '--version' || cmd === '-v') {
   Deno.exit(0)
 }
 
-let dev_path = Deno.args[0]
+const allFlag = Deno.args.includes('--all')
+let dev_path = Deno.args.filter(arg => arg !== '--all')[0]
 
 if (dev_path === '.') {
   dev_path = Deno.cwd()
@@ -51,6 +54,16 @@ async function askToDelete(dirs: AsyncIterable<Deno.DirEntry>): Promise<string[]
   return to_delete
 }
 
+async function getAllDirs(dirs: AsyncIterable<Deno.DirEntry>): Promise<string[]> {
+  const allDirs: string[] = []
+  
+  for await (const dir of dirs) {
+    allDirs.push(dir.name)
+  }
+  
+  return allDirs
+}
+
 async function deleteDirs(directories: string[]) {
   if (directories.length === 0) {
     consola.info('Nothing to delete')
@@ -76,5 +89,12 @@ async function deleteDirs(directories: string[]) {
 }
 
 const dirs = getDirs(dev_path)
-const to_delete = await askToDelete(dirs)
+
+let to_delete: string[]
+if (allFlag) {
+  to_delete = await getAllDirs(dirs)
+} else {
+  to_delete = await askToDelete(dirs)
+}
+
 await deleteDirs(to_delete)

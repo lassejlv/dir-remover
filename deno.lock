@@ -3,7 +3,7 @@
   "specifiers": {
     "jsr:@std/assert@1": "1.0.11",
     "jsr:@std/internal@^1.0.5": "1.0.5",
-    "npm:consola@^3.4.0": "3.4.0"
+    "npm:consola@^3.4.2": "3.4.2"
   },
   "jsr": {
     "@std/assert@1.0.11": {
@@ -17,14 +17,14 @@
     }
   },
   "npm": {
-    "consola@3.4.0": {
-      "integrity": "sha512-EiPU8G6dQG0GFHNR8ljnZFki/8a+cQwEQ+7wpxdChl02Q8HXlwEZWD5lqAF8vC2sEC3Tehr8hy7vErz88LHyUA=="
+    "consola@3.4.2": {
+      "integrity": "sha512-5IKcdX0nnYavi6G7TtOhwkYzyjfJlatbjMjuLSfE2kYT5pMDOilZ4OvMhi637CcDICTmz3wARPoyhqyX1Y+XvA=="
     }
   },
   "workspace": {
     "dependencies": [
       "jsr:@std/assert@1",
-      "npm:consola@^3.4.0"
+      "npm:consola@^3.4.2"
     ]
   }
 }
