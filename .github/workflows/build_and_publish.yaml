@@ -1,4 +1,4 @@
-name: Build and Release Assets
+name: Build and Release Go Assets
 
 on:
   release:
@@ -15,10 +15,11 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Deno
-        uses: denoland/setup-deno@v2
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          deno-version: v2.x
+          go-version: '1.22'
+          check-latest: true
 
       - name: Get release
         id: get_release
@@ -26,51 +27,59 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Install dependencies
+        run: |
+          go mod tidy
+          go get github.com/fatih/color
+          go get github.com/olekukonko/tablewriter
+          go get github.com/briandowns/spinner
+
       - name: Build all platform binaries
         run: |
-          # Run the compile:all task which builds for all platforms
-          deno task compile:all
+          # Create directories for builds
+          mkdir -p build/{darwin,linux,windows}/{amd64,arm64}
 
-          # Debug - check what files were actually created
+          # Build for macOS (darwin)
+          GOOS=darwin GOARCH=amd64 go build -o build/darwin/amd64/dir-remover
+          GOOS=darwin GOARCH=arm64 go build -o build/darwin/arm64/dir-remover
+
+          # Build for Linux
+          GOOS=linux GOARCH=amd64 go build -o build/linux/amd64/dir-remover
+          GOOS=linux GOARCH=arm64 go build -o build/linux/arm64/dir-remover
+
+          # Build for Windows
+          GOOS=windows GOARCH=amd64 go build -o build/windows/amd64/dir-remover.exe
+          GOOS=windows GOARCH=arm64 go build -o build/windows/arm64/dir-remover.exe
+
+          # Debug - check what files were created
           echo "Files in build directory:"
-          find build -type f || echo "No build directory found"
+          find build -type f
 
           # Create a directory for renamed release assets
           mkdir -p release-assets
 
-          # Find and copy binaries with flexible path handling
+          # Copy and rename binaries for release
           # Darwin (macOS) binaries
-          if [ -f "build/darwin/aarch64/dir-remover" ]; then
-            cp build/darwin/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
-          elif [ -f "build/darwin/arm64/dir-remover" ]; then
-            cp build/darwin/arm64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
-          fi
-
-          if [ -f "build/darwin/x64/dir-remover" ]; then
-            cp build/darwin/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-macos
-          fi
+          cp build/darwin/arm64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos
+          cp build/darwin/amd64/dir-remover release-assets/dir-remover-amd64-${{ steps.get_release.outputs.tag_name }}-macos
 
           # Linux binaries
-          if [ -f "build/linux/aarch64/dir-remover" ]; then
-            cp build/linux/aarch64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
-          elif [ -f "build/linux/arm64/dir-remover" ]; then
-            cp build/linux/arm64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
-          fi
-
-          if [ -f "build/linux/x64/dir-remover" ]; then
-            cp build/linux/x64/dir-remover release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-linux
-          fi
+          cp build/linux/arm64/dir-remover release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux
+          cp build/linux/amd64/dir-remover release-assets/dir-remover-amd64-${{ steps.get_release.outputs.tag_name }}-linux
 
           # Windows binaries
-          if [ -f "build/windows/aarch64/dir-remover.exe" ]; then
-            cp build/windows/aarch64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
-          elif [ -f "build/windows/arm64/dir-remover.exe" ]; then
-            cp build/windows/arm64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
-          fi
+          cp build/windows/arm64/dir-remover.exe release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.exe
+          cp build/windows/amd64/dir-remover.exe release-assets/dir-remover-amd64-${{ steps.get_release.outputs.tag_name }}-windows.exe
 
-          if [ -f "build/windows/x64/dir-remover.exe" ]; then
-            cp build/windows/x64/dir-remover.exe release-assets/dir-remover-x64-${{ steps.get_release.outputs.tag_name }}-windows.exe
-          fi
+          # Create compressed archives for each platform
+          cd build/darwin/arm64 && tar -czf ../../../release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-macos.tar.gz dir-remover && cd -
+          cd build/darwin/amd64 && tar -czf ../../../release-assets/dir-remover-amd64-${{ steps.get_release.outputs.tag_name }}-macos.tar.gz dir-remover && cd -
+
+          cd build/linux/arm64 && tar -czf ../../../release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-linux.tar.gz dir-remover && cd -
+          cd build/linux/amd64 && tar -czf ../../../release-assets/dir-remover-amd64-${{ steps.get_release.outputs.tag_name }}-linux.tar.gz dir-remover && cd -
+
+          cd build/windows/arm64 && zip -r ../../../release-assets/dir-remover-arm64-${{ steps.get_release.outputs.tag_name }}-windows.zip dir-remover.exe && cd -
+          cd build/windows/amd64 && zip -r ../../../release-assets/dir-remover-amd64-${{ steps.get_release.outputs.tag_name }}-windows.zip dir-remover.exe && cd -
 
           # List what we found to upload
           echo "Files ready to upload:"
