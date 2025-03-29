@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -15,7 +16,7 @@ import (
 	"github.com/olekukonko/tablewriter"
 )
 
-const version = "0.1.5"
+const version = "0.1.6"
 
 var (
 	cyan   = color.New(color.FgCyan).SprintFunc()
@@ -34,93 +35,102 @@ type fileEntry struct {
 }
 
 func main() {
+	log.SetFlags(0)
+
 	allFlag := flag.Bool("all", false, "Skip individual confirmations and ask to delete all files at once")
 	helpFlag := flag.Bool("help", false, "Show help information")
-	hFlag := flag.Bool("h", false, "Show help information")
+	hFlag := flag.Bool("h", false, "Show help information (alias for -help)")
 	versionFlag := flag.Bool("version", false, "Show version information")
-	vFlag := flag.Bool("v", false, "Show version information")
+	vFlag := flag.Bool("v", false, "Show version information (alias for -version)")
 
 	flag.Parse()
 
 	if *helpFlag || *hFlag {
-		fmt.Printf("\n%s\n\n  %s\n  %s\n\n",
+		fmt.Printf("\n%s\n\n  %s\n  %s %s\n  %s %s\n\n",
 			bold("USAGE:"),
 			"dir-remover [path]",
-			"--all    Skip individual confirmations and ask to delete all files at once")
+			"--all       ", "Skip individual confirmations and ask to delete all items at once",
+			"--help, -h  ", "Show this help information",
+			"--version, -v", "Show version information")
 		os.Exit(0)
 	}
 
 	if *versionFlag || *vFlag {
-		fmt.Printf("dir-remover %s\n", version)
+		fmt.Printf("dir-remover v%s\n", version)
 		os.Exit(0)
 	}
 
-	devPath := "."
+	targetPath := "."
 	args := flag.Args()
 	if len(args) > 0 {
-		devPath = args[0]
+		targetPath = args[0]
 	}
 
-	if devPath == "." {
-		var err error
-		devPath, err = os.Getwd()
-		if err != nil {
-			fmt.Println(red("✗ Error:"), "Failed to get current directory")
-			os.Exit(1)
-		}
-	}
-
-	fileInfo, err := os.Stat(devPath)
+	var err error
+	targetPath, err = filepath.Abs(targetPath)
 	if err != nil {
-		fmt.Println(red("✗ Error:"), "Failed to access path:", devPath)
-		os.Exit(1)
+		log.Fatalf("%s Failed to get absolute path for '%s': %v", red("✗ Error:"), targetPath, err)
+	}
+
+	fileInfo, err := os.Stat(targetPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			log.Fatalf("%s Path does not exist: %s", red("✗ Error:"), cyan(targetPath))
+		}
+		log.Fatalf("%s Failed to access path: %s (%v)", red("✗ Error:"), cyan(targetPath), err)
 	}
 
 	if !fileInfo.IsDir() {
-		handleSingleFile(devPath, fileInfo)
+		handleSingleFile(targetPath, fileInfo)
 		return
 	}
 
-	fmt.Printf("\n%s %s\n\n", bold("DIRECTORY:"), cyan(devPath))
+	fmt.Printf("\n%s %s\n\n", bold("DIRECTORY:"), cyan(targetPath))
 
-	if !confirm(fmt.Sprintf("Are you sure you want to proceed with %s?", cyan(devPath))) {
-		fmt.Println(yellow("Operation aborted by user"))
+	if !confirm(fmt.Sprintf("Scan and potentially delete items within %s?", cyan(targetPath))) {
+		fmt.Println(yellow("Operation aborted by user."))
 		os.Exit(0)
 	}
 
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-	s.Suffix = " Reading directory..."
+	s.Suffix = fmt.Sprintf(" Reading directory %s...", cyan(filepath.Base(targetPath)))
+	s.Color("cyan")
 	s.Start()
 
-	entries, err := os.ReadDir(devPath)
+	entries, err := os.ReadDir(targetPath)
 	if err != nil {
 		s.Stop()
-		fmt.Println(red("✗ Error:"), "Failed to read directory:", err)
-		os.Exit(1)
+		log.Fatalf("%s Failed to read directory: %v", red("✗ Error:"), err)
 	}
 
-	fileEntries := getFileEntries(entries, devPath)
+	fileEntries := getFileEntries(entries, targetPath)
 	s.Stop()
 
 	if len(fileEntries) == 0 {
-		fmt.Println(yellow("No files or directories found"))
+		fmt.Println(yellow("No files or subdirectories found to delete in %s", cyan(targetPath)))
 		os.Exit(0)
 	}
 
 	var toDelete []fileEntry
+	reader := bufio.NewReader(os.Stdin)
+
 	if *allFlag {
-		showFileTable(fileEntries, true)
-		if confirm(fmt.Sprintf("Delete %s items shown above?", bold(fmt.Sprintf("%d", len(fileEntries))))) {
+		fmt.Println(bold("\nItems found:"))
+		showFileTable(fileEntries, false)
+		if confirmWithReader(reader, fmt.Sprintf("Delete all %s items shown above?", bold(fmt.Sprintf("%d", len(fileEntries))))) {
+			for i := range fileEntries {
+				fileEntries[i].toBeDeleted = true
+			}
 			toDelete = fileEntries
 		}
 	} else {
-		toDelete = selectFilesInteractively(fileEntries)
+		toDelete = selectFilesInteractively(fileEntries, reader)
 	}
 
 	if len(toDelete) > 0 {
-		deleteSelectedEntries(toDelete, devPath)
+		deleteSelectedEntries(toDelete, reader)
 	} else {
-		fmt.Println(yellow("Nothing to delete"))
+		fmt.Println(yellow("No items selected for deletion."))
 	}
 }
 
@@ -135,20 +145,20 @@ func handleSingleFile(path string, info os.FileInfo) {
 	table.Append([]string{
 		filepath.Base(path),
 		formatSize(info.Size()),
-		info.ModTime().Format("Jan 02, 2006 15:04:05"),
+		info.ModTime().Format("Jan 02, 2006 15:04"),
 	})
 	table.Render()
 	fmt.Println()
 
-	if confirm(fmt.Sprintf("Do you want to delete %s?", cyan(path))) {
+	if confirm(fmt.Sprintf("Do you want to delete the file %s?", cyan(filepath.Base(path)))) {
 		err := os.Remove(path)
 		if err != nil {
-			fmt.Println(red("✗ Failed:"), "Could not delete file:", err)
+			fmt.Printf("%s Failed to delete file: %v\n", red("✗ Failed:"), err)
 		} else {
-			fmt.Println(green("✓ Success:"), "Deleted file:", path)
+			fmt.Printf("%s Deleted file: %s\n", green("✓ Success:"), cyan(path))
 		}
 	} else {
-		fmt.Println(yellow("Operation aborted by user"))
+		fmt.Println(yellow("Operation aborted by user."))
 	}
 }
 
@@ -158,16 +168,18 @@ func getFileEntries(entries []fs.DirEntry, basePath string) []fileEntry {
 	for _, entry := range entries {
 		info, err := entry.Info()
 		if err != nil {
+			log.Printf("%s Could not get info for '%s': %v\n", yellow("⚠ Warning:"), entry.Name(), err)
 			continue
 		}
 
 		fullPath := filepath.Join(basePath, entry.Name())
 
 		fileEntries = append(fileEntries, fileEntry{
-			name:    fullPath,
-			size:    info.Size(),
-			isDir:   entry.IsDir(),
-			modTime: info.ModTime(),
+			name:        fullPath,
+			size:        info.Size(),
+			isDir:       entry.IsDir(),
+			modTime:     info.ModTime(),
+			toBeDeleted: false,
 		})
 	}
 
@@ -184,28 +196,29 @@ func formatSize(size int64) string {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %cB", float64(size)/float64(div), "KMGTPE"[exp])
+	return fmt.Sprintf("%.1f %ciB", float64(size)/float64(div), "KMGTPE"[exp])
 }
 
-func showFileTable(entries []fileEntry, showAll bool) {
+func showFileTable(entries []fileEntry, showCheckmarks bool) {
+	if len(entries) == 0 {
+		fmt.Println(yellow(" (No items to display) "))
+		return
+	}
+
 	table := tablewriter.NewWriter(os.Stdout)
 	table.SetHeader([]string{"Type", "Name", "Size", "Modified"})
 	table.SetBorder(true)
+	table.SetRowLine(true)
+	table.SetAutoWrapText(false)
 
-	limit := len(entries)
-	if !showAll && limit > 10 {
-		limit = 10
-	}
-
-	for i := 0; i < limit; i++ {
-		entry := entries[i]
+	for _, entry := range entries {
 		entryType := "File"
 		if entry.isDir {
-			entryType = "Dir"
+			entryType = "Dir "
 		}
 
 		name := filepath.Base(entry.name)
-		if entry.toBeDeleted {
+		if showCheckmarks && entry.toBeDeleted {
 			name = green(name + " ✓")
 		}
 
@@ -217,84 +230,123 @@ func showFileTable(entries []fileEntry, showAll bool) {
 		})
 	}
 
-	if !showAll && len(entries) > 10 {
-		table.SetFooter([]string{"", fmt.Sprintf("... and %d more", len(entries)-10), "", ""})
-	}
-
 	fmt.Println()
 	table.Render()
 	fmt.Println()
 }
 
-func selectFilesInteractively(entries []fileEntry) []fileEntry {
+func selectFilesInteractively(entries []fileEntry, reader *bufio.Reader) []fileEntry {
 	var selected []fileEntry
 
-	fmt.Println(bold("\nSelect files/directories to delete:"))
-	showFileTable(entries, true)
+	fmt.Println(bold("\nSelect items to delete (y/N):"))
+	showFileTable(entries, false)
 
-	for i, entry := range entries {
+	displayEntries := make([]fileEntry, len(entries))
+	copy(displayEntries, entries)
+
+	for i := range displayEntries {
+		entry := &displayEntries[i]
+
 		name := filepath.Base(entry.name)
 		entryType := "file"
 		if entry.isDir {
 			entryType = "directory"
 		}
 
-		if confirm(fmt.Sprintf("[%d/%d] Delete %s %s?",
-			i+1, len(entries), entryType, cyan(name))) {
+		if confirmWithReader(reader, fmt.Sprintf("[%d/%d] Delete %s %s (%s)?",
+			i+1, len(displayEntries), entryType, cyan(name), formatSize(entry.size))) {
+
 			entry.toBeDeleted = true
-			selected = append(selected, entry)
+
+			entries[i].toBeDeleted = true
+			selected = append(selected, entries[i])
+
 		}
+	}
+
+	if len(selected) > 0 {
+		fmt.Println(bold("\nItems marked for deletion:"))
+		showFileTable(selected, true)
 	}
 
 	return selected
 }
 
-func deleteSelectedEntries(entries []fileEntry, basePath string) {
-	if len(entries) == 0 {
+func deleteSelectedEntries(toDelete []fileEntry, reader *bufio.Reader) {
+	if len(toDelete) == 0 {
+		fmt.Println(yellow("Nothing selected to delete."))
 		return
 	}
 
-	fmt.Println(bold("\nSummary of items to delete:"))
-	showFileTable(entries, true)
+	fmt.Println(bold("\nSummary of items to be deleted:"))
+	showFileTable(toDelete, true)
 
-	if !confirm(fmt.Sprintf("\nAre you sure you want to delete these %d items?", len(entries))) {
-		fmt.Println(yellow("Operation aborted by user"))
+	if !confirmWithReader(reader, fmt.Sprintf("\nProceed with deleting these %s items?", bold(fmt.Sprintf("%d", len(toDelete))))) {
+		fmt.Println(yellow("Operation aborted by user."))
 		return
 	}
 
 	s := spinner.New(spinner.CharSets[14], 100*time.Millisecond)
-	s.Suffix = " Deleting files..."
+	s.Suffix = " Deleting items..."
+	s.Color("cyan")
 	s.Start()
 
 	successful := 0
 	failed := 0
+	var failedItems []struct {
+		Name string
+		Err  error
+	}
 
-	for _, entry := range entries {
+	for _, entry := range toDelete {
 		err := os.RemoveAll(entry.name)
 		if err != nil {
 			failed++
+			failedItems = append(failedItems, struct {
+				Name string
+				Err  error
+			}{entry.name, err})
 		} else {
 			successful++
 		}
 	}
 
 	s.Stop()
-
 	fmt.Println()
-	fmt.Println(green(fmt.Sprintf("✓ Successfully deleted %d items", successful)))
+
+	if successful > 0 {
+		fmt.Println(green(fmt.Sprintf("✓ Successfully deleted %d items.", successful)))
+	}
 	if failed > 0 {
-		fmt.Println(red(fmt.Sprintf("✗ Failed to delete %d items", failed)))
+		fmt.Println(red(fmt.Sprintf("✗ Failed to delete %d items:", failed)))
+		for _, item := range failedItems {
+			fmt.Printf("  - %s: %v\n", cyan(filepath.Base(item.Name)), item.Err)
+		}
 	}
 }
 
 func confirm(message string) bool {
 	reader := bufio.NewReader(os.Stdin)
-	fmt.Printf("%s [y/N]: ", message)
-	response, err := reader.ReadString('\n')
-	if err != nil {
-		return false
-	}
+	return confirmWithReader(reader, message)
+}
 
-	response = strings.ToLower(strings.TrimSpace(response))
-	return response == "y" || response == "yes"
+func confirmWithReader(reader *bufio.Reader, message string) bool {
+	for {
+		fmt.Printf("%s [y/N]: ", message)
+		response, err := reader.ReadString('\n')
+		if err != nil {
+			log.Printf("%s Error reading input: %v. Assuming No.", yellow("⚠ Warning:"), err)
+			return false
+		}
+
+		response = strings.ToLower(strings.TrimSpace(response))
+
+		if response == "y" || response == "yes" {
+			return true
+		}
+		if response == "n" || response == "no" || response == "" {
+			return false
+		}
+		fmt.Println(yellow("Invalid input. Please enter 'y' or 'n'."))
+	}
 }
