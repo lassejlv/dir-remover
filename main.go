@@ -278,9 +278,6 @@ func deleteSelectedEntries(toDelete []fileEntry, reader *bufio.Reader) {
 		return
 	}
 
-	fmt.Println(bold("\nSummary of items to be deleted:"))
-	showFileTable(toDelete, true)
-
 	if !confirmWithReader(reader, fmt.Sprintf("\nProceed with deleting these %s items?", bold(fmt.Sprintf("%d", len(toDelete))))) {
 		fmt.Println(yellow("Operation aborted by user."))
 		return
